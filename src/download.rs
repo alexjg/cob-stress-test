@@ -1,4 +1,6 @@
 use super::downloaded_issue::DownloadedIssue;
+use super::RepoName;
+
 use futures::stream::{StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use std::pin::Pin;
@@ -15,6 +17,14 @@ pub enum Error {
     Join(#[from] JoinError),
 }
 
+#[derive(Debug, Error)]
+pub enum LoadError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Serde(#[from] serde_json::Error),
+}
+
 pub struct Storage {
     dir: std::path::PathBuf,
 }
@@ -22,6 +32,21 @@ pub struct Storage {
 impl Storage {
     pub fn new(storage_dir: std::path::PathBuf) -> Storage {
         Storage { dir: storage_dir }
+    }
+
+    /// List downloaded issues in this storage
+    pub(crate) fn issues(&self) -> Result<Vec<DownloadedIssue>, LoadError> {
+        if !std::fs::try_exists(&self.dir)? {
+            Ok(Vec::new())
+        } else {
+            let mut issues = Vec::new();
+            for file in std::fs::read_dir(&self.dir)? {
+                let bytes = std::fs::read(file?.path())?;
+                let issue: DownloadedIssue = serde_json::from_slice(&bytes[..])?;
+                issues.push(issue)
+            }
+            Ok(issues)
+        }
     }
 
     fn stored_issues(&self) -> Vec<u64> {
@@ -36,13 +61,12 @@ impl Storage {
     }
 }
 
-pub async fn download(crab: octocrab::Octocrab, owner: String, repo: String, storage: Storage) -> Result<(), Error> {
-    let mut stream = issues(
-        &crab,
-        owner.as_str(),
-        repo.as_str(),
-        storage.stored_issues(),
-    );
+pub(crate) async fn download(
+    crab: octocrab::Octocrab,
+    repo: RepoName,
+    storage: Storage,
+) -> Result<(), Error> {
+    let mut stream = issues(&crab, &repo, storage.stored_issues());
     while let Some(issue) = stream.next().await {
         storage.store(&issue?)?;
     }
@@ -57,8 +81,7 @@ enum PaginationState<T> {
 
 fn issues<'a>(
     crab: &'a octocrab::Octocrab,
-    owner: &'a str,
-    repo: &'a str,
+    reponame: &'a RepoName,
     _stored_issues: Vec<u64>,
 ) -> impl futures::stream::Stream<Item = Result<DownloadedIssue, Error>> + 'a {
     let stream: Pin<
@@ -79,7 +102,12 @@ fn issues<'a>(
         PaginationState::Starting(crab.clone()),
         async move |state| match state {
             PaginationState::Starting(crab) => {
-                let first_page = crab.issues(owner, repo).list().per_page(100).send().await?;
+                let first_page = crab
+                    .issues(reponame.owner.as_str(), reponame.name.as_str())
+                    .list()
+                    .per_page(100)
+                    .send()
+                    .await?;
                 Ok(Some((
                     futures::stream::empty().boxed(),
                     PaginationState::InProgress(crab, first_page),
@@ -89,7 +117,7 @@ fn issues<'a>(
             PaginationState::InProgress(crab, current_page) => {
                 let items = futures::stream::FuturesUnordered::new();
                 for issue in current_page.items {
-                    items.push(get_issue(crab.clone(), owner, repo, issue))
+                    items.push(get_issue(crab.clone(), reponame, issue))
                 }
                 let items = items.boxed();
                 let next_state = crab
@@ -107,12 +135,16 @@ fn issues<'a>(
 
 async fn get_issue(
     crab: octocrab::Octocrab,
-    owner: &str,
-    repo: &str,
+    reponame: &RepoName,
     issue: octocrab::models::issues::Issue,
 ) -> Result<DownloadedIssue, Error> {
     let mut comments = Vec::new();
-    let mut comments_stream = get_comments(&crab, owner, repo, issue.number.try_into().unwrap());
+    let mut comments_stream = get_comments(
+        &crab,
+        reponame.owner.as_str(),
+        reponame.name.as_str(),
+        issue.number.try_into().unwrap(),
+    );
     while let Some(try_comments_page) = comments_stream.next().await {
         let comments_page = try_comments_page?;
         comments.extend_from_slice(&comments_page[..]);
@@ -159,16 +191,16 @@ fn get_comments<'a>(
 
 // We could do this with graphql instead, which looks like this:
 //
-// query getIssues($owner: String!, $name: String!) { 
+// query getIssues($owner: String!, $name: String!) {
 //   repository(owner: $owner, name: $name) {
 //   	issues(first: 100) {
 //       nodes {
 //         author { login }
-//         body 
+//         body
 //         createdAt
 //         updatedAt
 //         comments(first: 100) {
-//           nodes {            
+//           nodes {
 //             author { login }
 //             body
 //             createdAt
@@ -185,4 +217,4 @@ fn get_comments<'a>(
 // }
 //
 // We would have to find a way of recognising when we didn't manage to get all of the comments and
-// then fetch more. But this would in general be easier because we 
+// then fetch more. But this would in general be easier because we

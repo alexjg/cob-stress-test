@@ -1,15 +1,17 @@
 use chrono::{DateTime, Utc};
 
+use crate::GithubUserId;
+
 #[derive(serde::Deserialize, serde::Serialize)]
 pub(crate) struct DownloadedIssue {
     pub id: u64,
-    state: String,
-    title: String,
-    body: Option<String>,
-    author_id: u64,
-    comments: Vec<DownloadedComment>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    pub state: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub author_id: u64,
+    pub comments: Vec<DownloadedComment>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl DownloadedIssue {
@@ -25,15 +27,25 @@ impl DownloadedIssue {
             updated_at: gh_issue.updated_at,
         }
     }
+
+    pub fn author_id(&self) -> GithubUserId {
+        GithubUserId(self.author_id)
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub(crate) struct DownloadedComment {
-    id: u64,
-    author_id: u64,
-    body: String,
-    created_at: DateTime<Utc>,
-    updated_at: Option<DateTime<Utc>>,
+    pub id: u64,
+    pub author_id: u64,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+impl DownloadedComment {
+    pub(crate) fn author_id(&self) -> GithubUserId {
+        GithubUserId(self.author_id)
+    }
 }
 
 impl From<&octocrab::models::issues::Comment> for DownloadedComment {

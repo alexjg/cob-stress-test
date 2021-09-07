@@ -1,0 +1,22 @@
+{
+    "type": "object",
+    "properties": {
+        "author_urn": {"type": "string"},
+        "title": {"type": "string"},
+        "body": {"type": "string"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "comments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "comment": {"type": "string"},
+                    "commenter_urn": {"type": "string"},
+                    "created_at": {"type": "string", "format": "date-time"}
+                },
+                "required": ["comment", "commenter_urn", "created_at"]
+            }
+        }
+    },
+    "required": ["author_urn", "title", "created_at", "comments"]
+}
