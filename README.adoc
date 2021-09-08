@@ -1,0 +1,89 @@
+= Collaborative object stress test
+
+This repository is a tool for exploring how Radicle collaborative objects
+perform when there are large numbers of objects. There are two questions I am
+interested in:
+
+* How much space overhead does the encoding of automerge changes into git merkle
+  trees introduce?
+* How long does it take to retrieve all the issues of a given type? 
+
+To answer these questions we need a test dataset. In order that this data be
+somewhat realistic we download issues from a selected repository in github and
+then import these issues into a simplified monorepo. 
+
+This is all reified as a command line tool which implements two separate steps,
+one to download issues from a Github repo and one to import those issues into a
+monorepo.
+
+== Download issues
+
+First we need to download issues from Github. 
+
+[source,shell]
+----
+> collab-stress-test --token-file ./PERSONAL_TOKEN download-issues automerge/automerge-rs <1>
+> tree ./data/
+└── automerge
+    └── automerge-rs
+        ├── download
+        │   ├── 618182998.json
+        │   ├── 627192368.json
+        ...
+----
+<1> `--token-file` is the path to a file containing a github
+    https://github.com/settings/tokens[personal access token]
+
+By default this tool uses a data directory in `$CWD/data`. For each github
+repository there is a directory in the data directory under `owner/name`.
+Downloaded issues are saved in `$data/owner/name/downlod`. Above you can see
+there is one json file per issue.
+
+== Import Issues
+
+[source,shell]
+----
+> collab-stress-test import-issues automerge/automerge-rs
+> tree ./data/
+./data/automerge/automerge-rs/monorepo
+├── git
+│   ├── config
+│   ├── description
+│   ├── HEAD
+│   ├── hooks
+|   |   ...
+│   ├── info
+│   │   └── exclude
+│   ├── objects
+│   │   ...
+│   └── refs
+│       ├── heads
+│       ├── namespaces
+│       │   └── hnrkxb6o83t9b8ukwboxh5yoxijgbfjww3y6y
+│       │       └── refs
+│       │           └── remotes
+│       │               ├── hyb1jukxajb5k1nf8mna4jpz1rdqsazybr3pm6tt5qacr66r64m9un
+│       │               │   └── cob
+│       │               │       └── xyz.radicle.githubissue
+│       │               │           ├── 43b0d8816cd863b739f65363b54893efbede83b2
+│       │               │           └── 8456bb5baadb8066478a97190ab15b8478813f4a
+│       │               ├── hybbnun8qz6znu71yfesn77tnjxggw1bgjc6x71fny9r1kofqykrja
+│       │               │   └── cob
+│       │               │       └── xyz.radicle.githubissue
+│       │               │           ├── 02569611763dda0ae9493078cab0b332b32d0f53
+│       │               │           ├── 2e3e308006b082dc01618b9700ae8b75448d6513
+|       |               ...
+│       └── tags
+├── peer_identities
+├── peer_map
+├── peers
+│   ├── hyb1jukxajb5k1nf8mna4jpz1rdqsazybr3pm6tt5qacr66r64m9un
+│   ├── hybbnun8qz6znu71yfesn77tnjxggw1bgjc6x71fny9r1kofqykrja
+|   ...
+└── project_oid
+----
+
+This creates a monorepo under `$data/owner/name/monorepo`. This is not the same
+monorepo as the monorepo used by `librad`, but it's similar enough that the
+performance characteristics are the same. For more information see
+`src/lite_monorepo.rs`.
