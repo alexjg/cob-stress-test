@@ -1,4 +1,4 @@
-use link_cob::{ObjectId, RefsStorage, TypeName};
+use cob::{ObjectId, RefsStorage, TypeName};
 use link_identities::git::Urn;
 use thiserror::Error;
 

@@ -1,5 +1,7 @@
 use automerge::LocalChange;
+use either::Either;
 use lazy_static::lazy_static;
+use link_identities::delegation::Indirect;
 use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
@@ -28,8 +30,8 @@ lazy_static! {
         jsonschema::JSONSchema::compile(&as_json).unwrap();
         as_json
     };
-    static ref TYPENAME: link_cob::TypeName =
-        link_cob::TypeName::from_str("xyz.radicle.githubissue").unwrap();
+    static ref TYPENAME: cob::TypeName =
+        cob::TypeName::from_str("xyz.radicle.githubissue").unwrap();
 }
 
 #[derive(Debug, Error)]
@@ -63,19 +65,19 @@ pub(crate) enum ImportError {
     #[error(transparent)]
     PeerAssignments(#[from] PeerAssignmentsError),
     #[error(transparent)]
-    CobCreate(#[from] link_cob::error::Create<PeerRefsError>),
+    CobCreate(#[from] cob::error::Create<PeerRefsError>),
     #[error(transparent)]
-    CobUpdate(#[from] link_cob::error::Update<PeerRefsError>),
+    CobUpdate(#[from] cob::error::Update<PeerRefsError>),
 }
 
 #[derive(Debug, Error)]
 pub(crate) enum ListError {
     #[error(transparent)]
-    CobRetrieve(#[from] link_cob::error::Retrieve<PeerRefsError>),
+    CobRetrieve(#[from] cob::error::Retrieve<PeerRefsError>),
 }
 
 pub struct LiteMonorepo {
-    root: PathBuf,
+    _root: PathBuf,
     project: Project,
     peers: Peers,
     repo: git2::Repository,
@@ -116,7 +118,8 @@ impl LiteMonorepo {
                     description: None,
                     default_branch: None,
                 }),
-                key.public().into(),
+                Indirect::try_from_iter(peer_identities.keys().map(|k| Either::Left(k.public())))
+                    .unwrap(),
                 &key,
             )?;
             let project_oid_bytes = serde_json::to_vec(&project.content_id)?;
@@ -125,7 +128,7 @@ impl LiteMonorepo {
         };
 
         Ok(LiteMonorepo {
-            root: root.as_ref().to_path_buf(),
+            _root: root.as_ref().to_path_buf(),
             peers,
             repo,
             peer_assignments,
@@ -139,16 +142,16 @@ impl LiteMonorepo {
         let (creator_person, creator_key) = self.peer_identities.get(&creator_id).unwrap();
         let init_change = init_issue_change(issue, &creator_person.urn());
         let storage = PeerRefsStorage::new(creator_id.clone(), &self.repo);
-        let mut object = link_cob::create_object(
+        let mut object = cob::create_object(
             &storage,
             &self.repo,
             &(creator_key.clone()).into(),
             creator_person.content_id.into(),
-            link_cob::NewObjectSpec {
+            Either::Right(self.project.clone()),
+            cob::NewObjectSpec {
                 history: init_change,
                 message: None,
                 typename: TYPENAME.to_string(),
-                project_urn: self.project.urn(),
                 schema_json: SCHEMA.clone(),
             },
         )?;
@@ -158,13 +161,13 @@ impl LiteMonorepo {
             let (commentor_person, commentor_key) =
                 self.peer_identities.get(&commentor_id).unwrap();
             let storage = PeerRefsStorage::new(commentor_id.clone(), &self.repo);
-            object = link_cob::update_object(
-                &(commentor_key.clone()).into(),
+            object = cob::update_object(
                 &storage,
+                &(commentor_key.clone()).into(),
                 &self.repo,
                 commentor_person.content_id.into(),
-                link_cob::UpdateObjectSpec {
-                    project_urn: self.project.urn(),
+                Either::Right(self.project.clone()),
+                cob::UpdateObjectSpec {
                     object_id: object.id().clone(),
                     typename: TYPENAME.clone(),
                     message: None,
@@ -178,12 +181,17 @@ impl LiteMonorepo {
     pub(crate) fn list_issues(&self) -> Result<usize, ListError> {
         let some_peer = self.peers.some_peer();
         let storage = PeerRefsStorage::new(some_peer.clone(), &self.repo);
-        let objs = link_cob::retrieve_objects(&storage, &self.repo, &self.project.urn(), &TYPENAME)?;
+        let objs = cob::retrieve_objects(
+            &storage,
+            &self.repo,
+            Either::Right(self.project.clone()),
+            &TYPENAME,
+        )?;
         Ok(objs.len())
     }
 }
 
-fn init_issue_change(issue: &DownloadedIssue, author_urn: &Urn) -> link_cob::History {
+fn init_issue_change(issue: &DownloadedIssue, author_urn: &Urn) -> cob::History {
     let mut doc = automerge::Frontend::new();
     let mut backend = automerge::Backend::new();
     let (_, change) = doc
@@ -218,17 +226,17 @@ fn init_issue_change(issue: &DownloadedIssue, author_urn: &Urn) -> link_cob::His
         })
         .unwrap();
     let (_, change) = backend.apply_local_change(change.unwrap()).unwrap();
-    link_cob::History::Automerge(change.raw_bytes().to_vec())
+    cob::History::Automerge(change.raw_bytes().to_vec())
 }
 
 fn add_comment_change(
     comment: &DownloadedComment,
     commentor_urn: &Urn,
-    previous_history: &link_cob::History,
-) -> link_cob::History {
+    previous_history: &cob::History,
+) -> cob::History {
     let mut frontend = automerge::Frontend::new();
     let mut backend = automerge::Backend::new();
-    let link_cob::History::Automerge(hist) = previous_history;
+    let cob::History::Automerge(hist) = previous_history;
     let changes: Vec<automerge::Change> = automerge::Change::load_document(&hist).unwrap();
     let patch = backend.apply_changes(changes).unwrap();
     frontend.apply_patch(patch).unwrap();
@@ -255,7 +263,7 @@ fn add_comment_change(
         })
         .unwrap();
     let (_, change) = backend.apply_local_change(change.unwrap()).unwrap();
-    link_cob::History::Automerge(change.raw_bytes().to_vec())
+    cob::History::Automerge(change.raw_bytes().to_vec())
 }
 
 fn to_text(s: &str) -> automerge::Value {

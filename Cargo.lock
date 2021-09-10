@@ -401,18 +401,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "cob"
+version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+dependencies = [
+ "automerge",
+ "either",
+ "git-trailers",
+ "git2",
+ "jsonschema",
+ "link-crypto",
+ "link-identities",
+ "petgraph",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "collab-stress-test"
 version = "0.1.0"
 dependencies = [
  "automerge",
  "chrono",
  "clap 3.0.0-beta.4",
+ "cob",
+ "either",
  "futures",
  "git2",
  "globset",
  "jsonschema",
  "lazy_static",
- "link-cob",
  "link-crypto",
  "link-identities",
  "octocrab",
@@ -550,20 +572,6 @@ name = "dyn-clone"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee2626afccd7561a06cf1367e2950c4718ea04565e20fb5029b6c7d8ad09abcf"
-
-[[package]]
-name = "ed25519-zebra"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a128b76af6dd4b427e34a6fd43dc78dbfe73672ec41ff615a2414c1a0ad0409"
-dependencies = [
- "curve25519-dalek",
- "hex",
- "rand_core 0.5.1",
- "serde",
- "sha2",
- "thiserror",
-]
 
 [[package]]
 name = "ed25519-zebra"
@@ -837,6 +845,7 @@ checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
 [[package]]
 name = "git-trailers"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "nom",
  "thiserror",
@@ -1195,6 +1204,7 @@ dependencies = [
 [[package]]
 name = "link-canonical"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "serde",
  "serde_bytes",
@@ -1204,31 +1214,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "link-cob"
-version = "0.1.0"
-dependencies = [
- "automerge",
- "git-trailers",
- "git2",
- "jsonschema",
- "link-crypto",
- "link-identities",
- "petgraph",
- "regex",
- "serde",
- "serde_json",
- "thiserror",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "link-crypto"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "async-trait",
  "dyn-clone",
- "ed25519-zebra 2.2.0 (git+https://github.com/ZcashFoundation/ed25519-zebra?rev=0e7a96a267a756e642e102a28a44dd79b9c7df69)",
+ "ed25519-zebra",
  "futures-lite",
  "minicbor",
  "multibase",
@@ -1246,6 +1238,7 @@ dependencies = [
 [[package]]
 name = "link-identities"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "either",
  "futures-lite",
@@ -1792,6 +1785,7 @@ dependencies = [
 [[package]]
 name = "radicle-data"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "minicbor",
  "nonempty",
@@ -1802,6 +1796,7 @@ dependencies = [
 [[package]]
 name = "radicle-git-ext"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "git2",
  "minicbor",
@@ -1815,13 +1810,13 @@ dependencies = [
 [[package]]
 name = "radicle-keystore"
 version = "0.1.1"
-source = "git+https://github.com/radicle-dev/radicle-keystore?rev=619ca3600be58025f1f2b2fcc59d5ba72f52141f#619ca3600be58025f1f2b2fcc59d5ba72f52141f"
+source = "git+https://github.com/radicle-dev/radicle-keystore?rev=6d529ea6988ec20b21361d9789cacd7dccc64162#6d529ea6988ec20b21361d9789cacd7dccc64162"
 dependencies = [
  "async-trait",
  "byteorder",
  "chacha20poly1305",
  "cryptovec",
- "ed25519-zebra 2.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ed25519-zebra",
  "futures",
  "generic-array",
  "lazy_static",
@@ -1839,6 +1834,7 @@ dependencies = [
 [[package]]
 name = "radicle-macros"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 dependencies = [
  "quote",
  "radicle-git-ext",
@@ -1848,6 +1844,7 @@ dependencies = [
 [[package]]
 name = "radicle-std-ext"
 version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
 
 [[package]]
 name = "rand"

@@ -74,4 +74,8 @@ impl PeerIdentities {
     pub(crate) fn get(&self, peer_id: &PeerId) -> Option<&(Person, SecretKey)> {
         self.0.get(peer_id)
     }
+
+    pub(crate) fn keys(&self) -> impl Iterator<Item=&SecretKey> {
+        self.0.values().map(|v| &v.1)
+    }
 }
