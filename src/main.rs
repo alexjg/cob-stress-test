@@ -78,7 +78,7 @@ async fn main() {
                 .join(repo.owner.as_str())
                 .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
-            let mut monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
+            let mut monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
             let issue_storage_dir = storage_root.join("download");
             let storage = download::Storage::new(issue_storage_dir);
             let issues = storage.issues().unwrap();
@@ -89,7 +89,7 @@ async fn main() {
             );
             for issue in issues.iter() {
                 bar.inc(1);
-                match monorepo.import_issue(&issue) {
+                match monorepo.import_issue(issue) {
                     Ok(()) => {}
                     Err(e) => {
                         eprintln!("Failed to import issue: {}", e);
@@ -98,7 +98,6 @@ async fn main() {
                 }
             }
             bar.finish();
-            ()
         }
         Command::CreateMonorepo { repo } => {
             let storage_root = args
@@ -106,7 +105,7 @@ async fn main() {
                 .join(repo.owner.as_str())
                 .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
-            let _monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
+            let _monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
         }
         Command::ListImportedIssues { repo } => {
             let storage_root = args
@@ -114,7 +113,7 @@ async fn main() {
                 .join(repo.owner.as_str())
                 .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
-            let monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
+            let monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
             match monorepo.list_issues() {
                 Ok(n) => println!("There are {} issues", n),
                 Err(e) => eprintln!("Error retrieving issues {}", e),

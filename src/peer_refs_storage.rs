@@ -16,8 +16,11 @@ pub(crate) struct PeerRefsStorage<'a> {
 }
 
 impl<'a> PeerRefsStorage<'a> {
-    pub(crate) fn new(peer: link_crypto::PeerId, repo: &'a git2::Repository) -> PeerRefsStorage<'a> {
-        PeerRefsStorage{peer, repo}
+    pub(crate) fn new(
+        peer: link_crypto::PeerId,
+        repo: &'a git2::Repository,
+    ) -> PeerRefsStorage<'a> {
+        PeerRefsStorage { peer, repo }
     }
 }
 
@@ -87,8 +90,9 @@ impl<'a> RefsStorage for PeerRefsStorage<'a> {
             )
             .as_str(),
         )
-        .unwrap().compile_matcher();
-        references_glob(&self.repo, glob)?.collect()
+        .unwrap()
+        .compile_matcher();
+        references_glob(self.repo, glob)?.collect()
     }
 }
 
@@ -104,14 +108,19 @@ impl<'a> std::fmt::Display for LiteRef<'a> {
         write!(
             f,
             "refs/namespaces/{}/refs/remotes/{}/cob/{}/{}",
-            self.urn.encode_id(), self.peer, self.typename, self.object_id
+            self.urn.encode_id(),
+            self.peer,
+            self.typename,
+            self.object_id
         )
     }
 }
 
-
-fn references_glob<'a>(repo: &'a git2::Repository, glob: globset::GlobMatcher) -> Result<ReferencesGlob<'a>, Error> {
-    Ok(ReferencesGlob{
+fn references_glob(
+    repo: &git2::Repository,
+    glob: globset::GlobMatcher,
+) -> Result<ReferencesGlob<'_>, Error> {
+    Ok(ReferencesGlob {
         iter: repo.references()?,
         glob,
     })

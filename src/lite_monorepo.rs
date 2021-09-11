@@ -4,13 +4,9 @@ use lazy_static::lazy_static;
 use link_identities::delegation::Indirect;
 use std::path::PathBuf;
 use std::str::FromStr;
-use thiserror::Error;
 
 use link_identities::{
-    git::{
-        error::{Load as IdentityLoadError, Store as IdentityStoreError},
-        Urn,
-    },
+    git::Urn,
     payload::{Project as ProjectSubject, ProjectPayload},
     Identities, Project,
 };
@@ -18,10 +14,10 @@ use link_identities::{
 use crate::downloaded_issue::DownloadedComment;
 
 use super::downloaded_issue::DownloadedIssue;
-use super::peer_assignments::{Error as PeerAssignmentsError, PeerAssignments};
-use super::peer_identities::{Error as PeerIdentitiesError, PeerIdentities};
-use super::peer_refs_storage::{Error as PeerRefsError, PeerRefsStorage};
-use super::peers::{Error as PeersError, Peers};
+use super::peer_assignments::PeerAssignments;
+use super::peer_identities::PeerIdentities;
+use super::peer_refs_storage::PeerRefsStorage;
+use super::peers::Peers;
 
 lazy_static! {
     static ref SCHEMA: serde_json::Value = {
@@ -34,50 +30,89 @@ lazy_static! {
         cob::TypeName::from_str("xyz.radicle.githubissue").unwrap();
 }
 
-#[derive(Debug, Error)]
-pub(crate) enum Error {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Peers(#[from] PeersError),
-    #[error(transparent)]
-    Git(#[from] git2::Error),
-    #[error(transparent)]
-    Serde(#[from] serde_json::Error),
-    #[error(transparent)]
-    PeerAssignments(#[from] PeerAssignmentsError),
-    #[error(transparent)]
-    PeerIdentities(#[from] PeerIdentitiesError),
-    #[error(transparent)]
-    IdentityLoad(#[from] IdentityLoadError),
-    #[error(transparent)]
-    IdentityStore(#[from] IdentityStoreError),
+mod error {
+    use thiserror::Error;
+
+    use super::super::peer_assignments::Error as PeerAssignmentsError;
+    use super::super::peer_identities::Error as PeerIdentitiesError;
+    use super::super::peer_refs_storage::Error as PeerRefsError;
+    use super::super::peers::Error as PeersError;
+    use link_identities::git::error::{Load as IdentityLoadError, Store as IdentityStoreError};
+
+    #[derive(Debug, Error)]
+    pub(crate) enum CreateOrOpen {
+        #[error(transparent)]
+        Io(#[from] std::io::Error),
+        #[error(transparent)]
+        Peers(#[from] PeersError),
+        #[error(transparent)]
+        Git(#[from] git2::Error),
+        #[error(transparent)]
+        Serde(#[from] serde_json::Error),
+        #[error(transparent)]
+        PeerAssignments(#[from] PeerAssignmentsError),
+        #[error(transparent)]
+        PeerIdentities(#[from] PeerIdentitiesError),
+        #[error(transparent)]
+        IdentityLoad(#[from] IdentityLoadError),
+        #[error(transparent)]
+        IdentityStore(#[from] IdentityStoreError),
+    }
+
+    #[derive(Debug, Error)]
+    pub(crate) enum Import {
+        #[error(transparent)]
+        Io(#[from] std::io::Error),
+        #[error(transparent)]
+        Git(#[from] git2::Error),
+        #[error(transparent)]
+        Serde(#[from] serde_json::Error),
+        #[error(transparent)]
+        PeerAssignments(#[from] PeerAssignmentsError),
+        #[error(transparent)]
+        CobCreate(#[from] cob::error::Create<PeerRefsError>),
+        #[error(transparent)]
+        CobUpdate(#[from] cob::error::Update<PeerRefsError>),
+    }
+
+    #[derive(Debug, Error)]
+    pub(crate) enum List {
+        #[error(transparent)]
+        CobRetrieve(#[from] cob::error::Retrieve<PeerRefsError>),
+    }
 }
 
-#[derive(Debug, Error)]
-pub(crate) enum ImportError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Git(#[from] git2::Error),
-    #[error(transparent)]
-    Serde(#[from] serde_json::Error),
-    #[error(transparent)]
-    PeerAssignments(#[from] PeerAssignmentsError),
-    #[error(transparent)]
-    CobCreate(#[from] cob::error::Create<PeerRefsError>),
-    #[error(transparent)]
-    CobUpdate(#[from] cob::error::Update<PeerRefsError>),
-}
-
-#[derive(Debug, Error)]
-pub(crate) enum ListError {
-    #[error(transparent)]
-    CobRetrieve(#[from] cob::error::Retrieve<PeerRefsError>),
-}
-
+/// A `LiteMonorepo` is a rough approximation to the full monorepo used by librad. The aim is to be
+/// able to replicate the ref layout and object database of the full monorepo after creating and
+/// replicating collaborative objects from a number of project maintainers. We could use the
+/// `Testnet` from `radicle-link-test`, however, this seems like it would take a long time to setup
+/// and be fiddly to implement because we would keep having to wait for network interactions to
+/// occur after each collaborative object update. We don't really care about the network
+/// interactions, all we need to do is make sure that the storage ends up containing the right
+/// objects and references. In fact, because access to references is abstracted in the
+/// `cob::RefsStorage` trait, we can choose whatever ref layout is easiest to implement.
+///
+/// In this vein then, when we create the `LiteMonorepo` we create a set of secret keys - one for
+/// each peer - and save them. As we import issues from github we assign each github user ID to one of
+/// these peers (in a round robin fashion) and save the assignment. Then for each issue we create a
+/// change for the initial issue creation and then a change for each comment. We use
+/// [`PeerRefsStorage]` to talk to `cob`, which saves refs at
+/// `refs/namespaces/<project urn>/refs/remotes/<peer URN>/cob/<typename>/<object ID>` which is
+/// essentially the same as the librad implementation.
+///
+/// The lite monorepo ends up looking like this on disk:
+/// ```
+/// ├── git <- the underlying storage
+/// ├── peer_identities <- a JSON file mapping peer IDs to the OID of their identity tree
+/// ├── peer_map <- A JSON file mapping github user IDs to peer IDs
+/// ├── peers  <- files containing secret keys for each peer ID (given by filename)
+/// │   ├── hyb1jukxajb5k1nf8mna4jpz1rdqsazybr3pm6tt5qacr66r64m9un
+/// │   ├── hybbnun8qz6znu71yfesn77tnjxggw1bgjc6x71fny9r1kofqykrja
+/// |   ...
+/// └── project_oid <- The OID of the project identity tree
+/// ```
 pub struct LiteMonorepo {
-    _root: PathBuf,
+    root: PathBuf,
     project: Project,
     peers: Peers,
     repo: git2::Repository,
@@ -86,11 +121,13 @@ pub struct LiteMonorepo {
 }
 
 impl LiteMonorepo {
-    pub(crate) fn from_root<P: AsRef<std::path::Path>>(root: P) -> Result<LiteMonorepo, Error> {
+    pub(crate) fn create_or_open<P: AsRef<std::path::Path>>(
+        root: P,
+    ) -> Result<LiteMonorepo, error::CreateOrOpen> {
         if !std::fs::try_exists(&root)? {
             std::fs::create_dir_all(&root)?;
         }
-        let peers = Peers::from_keydir(&root.as_ref().join("peers"))?;
+        let peers = Peers::create_or_read(&root.as_ref().join("peers"))?;
         let repo_dir = &root.as_ref().join("git");
         let repo = if !std::fs::try_exists(&repo_dir)? {
             std::fs::create_dir_all(repo_dir)?;
@@ -128,7 +165,7 @@ impl LiteMonorepo {
         };
 
         Ok(LiteMonorepo {
-            _root: root.as_ref().to_path_buf(),
+            root: root.as_ref().to_path_buf(),
             peers,
             repo,
             peer_assignments,
@@ -137,11 +174,11 @@ impl LiteMonorepo {
         })
     }
 
-    pub(crate) fn import_issue(&mut self, issue: &DownloadedIssue) -> Result<(), ImportError> {
+    pub(crate) fn import_issue(&mut self, issue: &DownloadedIssue) -> Result<(), error::Import> {
         let creator_id = self.peer_assignments.assign(issue.author_id())?;
-        let (creator_person, creator_key) = self.peer_identities.get(&creator_id).unwrap();
+        let (creator_person, creator_key) = self.peer_identities.get(creator_id).unwrap();
         let init_change = init_issue_change(issue, &creator_person.urn());
-        let storage = PeerRefsStorage::new(creator_id.clone(), &self.repo);
+        let storage = PeerRefsStorage::new(*creator_id, &self.repo);
         let mut object = cob::create_object(
             &storage,
             &self.repo,
@@ -158,9 +195,8 @@ impl LiteMonorepo {
 
         for comment in &issue.comments {
             let commentor_id = self.peer_assignments.assign(comment.author_id())?;
-            let (commentor_person, commentor_key) =
-                self.peer_identities.get(&commentor_id).unwrap();
-            let storage = PeerRefsStorage::new(commentor_id.clone(), &self.repo);
+            let (commentor_person, commentor_key) = self.peer_identities.get(commentor_id).unwrap();
+            let storage = PeerRefsStorage::new(*commentor_id, &self.repo);
             object = cob::update_object(
                 &storage,
                 &(commentor_key.clone()).into(),
@@ -168,7 +204,7 @@ impl LiteMonorepo {
                 commentor_person.content_id.into(),
                 Either::Right(self.project.clone()),
                 cob::UpdateObjectSpec {
-                    object_id: object.id().clone(),
+                    object_id: *object.id(),
                     typename: TYPENAME.clone(),
                     message: None,
                     changes: add_comment_change(comment, &commentor_person.urn(), object.history()),
@@ -178,9 +214,9 @@ impl LiteMonorepo {
         Ok(())
     }
 
-    pub(crate) fn list_issues(&self) -> Result<usize, ListError> {
+    pub(crate) fn list_issues(&self) -> Result<usize, error::List> {
         let some_peer = self.peers.some_peer();
-        let storage = PeerRefsStorage::new(some_peer.clone(), &self.repo);
+        let storage = PeerRefsStorage::new(*some_peer, &self.repo);
         let objs = cob::retrieve_objects(
             &storage,
             &self.repo,
@@ -188,6 +224,12 @@ impl LiteMonorepo {
             &TYPENAME,
         )?;
         Ok(objs.len())
+    }
+}
+
+impl std::fmt::Debug for LiteMonorepo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LiteMonorepo{{ {} }}", self.root.display())
     }
 }
 
@@ -237,7 +279,7 @@ fn add_comment_change(
     let mut frontend = automerge::Frontend::new();
     let mut backend = automerge::Backend::new();
     let cob::History::Automerge(hist) = previous_history;
-    let changes: Vec<automerge::Change> = automerge::Change::load_document(&hist).unwrap();
+    let changes: Vec<automerge::Change> = automerge::Change::load_document(hist).unwrap();
     let patch = backend.apply_changes(changes).unwrap();
     frontend.apply_patch(patch).unwrap();
 

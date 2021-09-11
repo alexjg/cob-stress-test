@@ -14,13 +14,13 @@ impl FromStr for RepoName {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let components: Vec<&str> = s.split("/").collect();
+        let components: Vec<&str> = s.split('/').collect();
         match &components[..] {
-            &[owner, repo] => Ok(RepoName{
+            [owner, repo] => Ok(RepoName {
                 owner: owner.to_string(),
                 name: repo.to_string(),
             }),
-            _ => Err(ParseError{}),
+            _ => Err(ParseError {}),
         }
     }
 }
@@ -30,6 +30,3 @@ impl std::fmt::Display for RepoName {
         write!(f, "{}/{}", self.owner, self.name)
     }
 }
-
-
-

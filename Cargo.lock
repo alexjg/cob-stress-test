@@ -403,7 +403,7 @@ dependencies = [
 [[package]]
 name = "cob"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "automerge",
  "either",
@@ -433,6 +433,7 @@ dependencies = [
  "futures",
  "git2",
  "globset",
+ "indicatif",
  "jsonschema",
  "lazy_static",
  "link-crypto",
@@ -445,6 +446,19 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "console"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3993e6445baa160675931ec041a5e03ca84b9c6e32a056150d3aa2bdda0a1f45"
+dependencies = [
+ "encode_unicode",
+ "lazy_static",
+ "libc",
+ "terminal_size",
+ "winapi",
 ]
 
 [[package]]
@@ -595,6 +609,12 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "encode_unicode"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "encoding_rs"
@@ -845,7 +865,7 @@ checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
 [[package]]
 name = "git-trailers"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "nom",
  "thiserror",
@@ -1065,6 +1085,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicatif"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d207dc617c7a380ab07ff572a6e52fa202a2a8f355860ac9c38e23f8196be1b"
+dependencies = [
+ "console",
+ "lazy_static",
+ "number_prefix",
+ "regex",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1204,7 +1236,7 @@ dependencies = [
 [[package]]
 name = "link-canonical"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "serde",
  "serde_bytes",
@@ -1216,7 +1248,7 @@ dependencies = [
 [[package]]
 name = "link-crypto"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "async-trait",
  "dyn-clone",
@@ -1238,7 +1270,7 @@ dependencies = [
 [[package]]
 name = "link-identities"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "either",
  "futures-lite",
@@ -1538,6 +1570,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
 name = "object"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1785,7 +1823,7 @@ dependencies = [
 [[package]]
 name = "radicle-data"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "minicbor",
  "nonempty",
@@ -1796,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "radicle-git-ext"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "git2",
  "minicbor",
@@ -1834,7 +1872,7 @@ dependencies = [
 [[package]]
 name = "radicle-macros"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 dependencies = [
  "quote",
  "radicle-git-ext",
@@ -1844,7 +1882,7 @@ dependencies = [
 [[package]]
 name = "radicle-std-ext"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#ff0252190af489b959990c69f8547736deadaaea"
+source = "git+https://github.com/radicle-dev/radicle-link.git?branch=alexjg/collab-objects#633be2987340ddc08dd6e72a13dfd5c8dc81514f"
 
 [[package]]
 name = "rand"
@@ -2472,6 +2510,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dfed899f0eb03f32ee8c6a0aabdb8a7949659e3466561fc0adf54e26d88c5f4"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

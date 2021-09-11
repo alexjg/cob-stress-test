@@ -15,7 +15,10 @@ pub(crate) struct DownloadedIssue {
 }
 
 impl DownloadedIssue {
-    pub(crate) fn new(gh_issue: octocrab::models::issues::Issue, comments: Vec<octocrab::models::issues::Comment>) -> DownloadedIssue {
+    pub(crate) fn new(
+        gh_issue: octocrab::models::issues::Issue,
+        comments: Vec<octocrab::models::issues::Comment>,
+    ) -> DownloadedIssue {
         DownloadedIssue {
             id: gh_issue.id.0,
             state: gh_issue.state,

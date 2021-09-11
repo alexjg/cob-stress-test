@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use thiserror::Error;
 
-use link_crypto::{PeerId, SecStr, SecretKey, keystore::SecretKeyExt};
+use link_crypto::{keystore::SecretKeyExt, PeerId, SecStr, SecretKey};
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -20,7 +20,7 @@ pub(crate) enum WriteError {
 pub struct Peers(HashMap<link_crypto::PeerId, link_crypto::SecretKey>);
 
 impl Peers {
-    pub(crate) fn from_keydir<P: AsRef<std::path::Path>>(keydir: P) -> Result<Self, Error> {
+    pub(crate) fn create_or_read<P: AsRef<std::path::Path>>(keydir: P) -> Result<Self, Error> {
         if std::fs::try_exists(&keydir)? {
             let mut keys = HashMap::new();
             for file in std::fs::read_dir(keydir)? {
@@ -45,16 +45,11 @@ impl Peers {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item=(&PeerId, &SecretKey)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&PeerId, &SecretKey)> {
         self.0.iter()
-    }
-
-    pub(crate) fn get(&self, peer_id: &PeerId) -> Option<&SecretKey> {
-        self.0.get(peer_id)
     }
 
     pub(crate) fn some_peer(&self) -> &PeerId {
         self.0.iter().next().unwrap().0
     }
 }
-

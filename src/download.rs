@@ -75,64 +75,56 @@ pub(crate) async fn download(
 
 enum PaginationState<T> {
     Starting(octocrab::Octocrab),
-    InProgress(octocrab::Octocrab, octocrab::Page<T>),
+    InProgress(octocrab::Octocrab, Box<octocrab::Page<T>>),
     Done,
 }
+
+type IssueStreamResult<'a> = Result<
+    Pin<Box<dyn futures::Stream<Item = Result<DownloadedIssue, Error>> + std::marker::Send + 'a>>,
+    Error,
+>;
 
 fn issues<'a>(
     crab: &'a octocrab::Octocrab,
     reponame: &'a RepoName,
     _stored_issues: Vec<u64>,
 ) -> impl futures::stream::Stream<Item = Result<DownloadedIssue, Error>> + 'a {
-    let stream: Pin<
-        Box<
-            dyn futures::Stream<
-                    Item = Result<
-                        Pin<
-                            Box<
-                                dyn futures::Stream<Item = Result<DownloadedIssue, Error>>
-                                    + std::marker::Send,
-                            >,
-                        >,
-                        Error,
-                    >,
-                > + std::marker::Send,
-        >,
-    > = futures::stream::try_unfold::<PaginationState<octocrab::models::issues::Issue>, _, _, _>(
-        PaginationState::Starting(crab.clone()),
-        async move |state| match state {
-            PaginationState::Starting(crab) => {
-                let first_page = crab
-                    .issues(reponame.owner.as_str(), reponame.name.as_str())
-                    .list()
-                    .state(octocrab::params::State::All)
-                    .per_page(100)
-                    .send()
-                    .await?;
-                Ok(Some((
-                    futures::stream::empty().boxed(),
-                    PaginationState::InProgress(crab, first_page),
-                )))
-            }
-            PaginationState::Done => Ok(None),
-            PaginationState::InProgress(crab, current_page) => {
-                let items = futures::stream::FuturesUnordered::new();
-                for issue in current_page.items {
-                    if !issue.pull_request.is_some() {
-                        items.push(get_issue(crab.clone(), reponame, issue))
-                    }
+    let stream: Pin<Box<dyn futures::Stream<Item = IssueStreamResult> + std::marker::Send>> =
+        futures::stream::try_unfold::<PaginationState<octocrab::models::issues::Issue>, _, _, _>(
+            PaginationState::Starting(crab.clone()),
+            async move |state| match state {
+                PaginationState::Starting(crab) => {
+                    let first_page = crab
+                        .issues(reponame.owner.as_str(), reponame.name.as_str())
+                        .list()
+                        .state(octocrab::params::State::All)
+                        .per_page(100)
+                        .send()
+                        .await?;
+                    Ok(Some((
+                        futures::stream::empty().boxed(),
+                        PaginationState::InProgress(crab, Box::new(first_page)),
+                    )))
                 }
-                let items = items.boxed();
-                let next_state = crab
-                    .get_page(&current_page.next)
-                    .await?
-                    .map(|p| PaginationState::InProgress(crab, p))
-                    .unwrap_or(PaginationState::Done);
-                Ok(Some((items.map_err(Error::from).boxed(), next_state)))
-            }
-        },
-    )
-    .boxed();
+                PaginationState::Done => Ok(None),
+                PaginationState::InProgress(crab, current_page) => {
+                    let items = futures::stream::FuturesUnordered::new();
+                    for issue in current_page.items {
+                        if issue.pull_request.is_none() {
+                            items.push(get_issue(crab.clone(), reponame, issue))
+                        }
+                    }
+                    let items = items.boxed();
+                    let next_state = crab
+                        .get_page(&current_page.next)
+                        .await?
+                        .map(|p| PaginationState::InProgress(crab, Box::new(p)))
+                        .unwrap_or(PaginationState::Done);
+                    Ok(Some((items.map_err(Error::from).boxed(), next_state)))
+                }
+            },
+        )
+        .boxed();
     stream.try_flatten().boxed()
 }
 
@@ -176,14 +168,14 @@ fn get_comments<'a>(
                     .await?;
                 Ok(Some((
                     Vec::new(),
-                    PaginationState::InProgress(crab, first_page),
+                    PaginationState::InProgress(crab, Box::new(first_page)),
                 )))
             }
             PaginationState::InProgress(crab, current_page) => {
                 let next_state = crab
                     .get_page(&current_page.next)
                     .await?
-                    .map(|p| PaginationState::InProgress(crab, p))
+                    .map(|p| PaginationState::InProgress(crab, Box::new(p)))
                     .unwrap_or(PaginationState::Done);
                 Ok(Some((current_page.items, next_state)))
             }
