@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use clap::Clap;
+use indicatif::{ProgressBar, ProgressStyle};
 
 mod download;
 mod downloaded_issue;
@@ -11,14 +12,13 @@ mod repo_name;
 use repo_name::RepoName;
 mod lite_monorepo;
 use lite_monorepo::LiteMonorepo;
-mod peer_refs_storage;
 mod peer_assignments;
 mod peer_identities;
+mod peer_refs_storage;
 mod peers;
 
 #[derive(Clone, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct GithubUserId(u64);
-
 
 #[derive(Clap)]
 struct Args {
@@ -31,14 +31,20 @@ struct Args {
 
 #[derive(Clap)]
 enum Command {
-    DownloadIssues { 
+    DownloadIssues {
         #[clap(short, long)]
         token_file: String,
-        repo: RepoName 
+        repo: RepoName,
     },
-    CreateMonorepo { repo: RepoName },
-    ImportIssues { repo: RepoName },
-    ListImportedIssues { repo: RepoName },
+    CreateMonorepo {
+        repo: RepoName,
+    },
+    ImportIssues {
+        repo: RepoName,
+    },
+    ListImportedIssues {
+        repo: RepoName,
+    },
 }
 
 #[tokio::main]
@@ -48,7 +54,11 @@ async fn main() {
     match args.command {
         Command::DownloadIssues { token_file, repo } => {
             let token = std::fs::read_to_string(token_file).unwrap();
-            let repo_storage_dir = args.data_dir.join(repo.owner.as_str()).join(repo.name.as_str()).join("download");
+            let repo_storage_dir = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str())
+                .join("download");
             if !std::fs::try_exists(&repo_storage_dir).unwrap() {
                 std::fs::create_dir_all(&repo_storage_dir).unwrap();
             }
@@ -57,38 +67,52 @@ async fn main() {
                 .personal_token(token.trim().to_string())
                 .build()
                 .unwrap();
-            match download::download(crab, repo, storage)
-                .await
-            {
+            match download::download(crab, repo, storage).await {
                 Ok(()) => println!("Done"),
                 Err(e) => eprintln!("Failed: {}", e),
             }
-        },
+        }
         Command::ImportIssues { repo } => {
-            let storage_root = args.data_dir.join(repo.owner.as_str()).join(repo.name.as_str());
+            let storage_root = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
             let mut monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
             let issue_storage_dir = storage_root.join("download");
             let storage = download::Storage::new(issue_storage_dir);
             let issues = storage.issues().unwrap();
-            for issue in issues {
+            let bar = ProgressBar::new(issues.len() as u64);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{elapsed_precise}] {bar:40.yellow/blue} {pos:>7}/{len:7}"),
+            );
+            for issue in issues.iter() {
+                bar.inc(1);
                 match monorepo.import_issue(&issue) {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(e) => {
                         eprintln!("Failed to import issue: {}", e);
-                        return
+                        return;
                     }
                 }
             }
+            bar.finish();
             ()
         }
         Command::CreateMonorepo { repo } => {
-            let storage_root = args.data_dir.join(repo.owner.as_str()).join(repo.name.as_str());
+            let storage_root = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
             let _monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
         }
         Command::ListImportedIssues { repo } => {
-            let storage_root = args.data_dir.join(repo.owner.as_str()).join(repo.name.as_str());
+            let storage_root = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str());
             let monorepo_root = storage_root.join("monorepo");
             let monorepo = LiteMonorepo::from_root(monorepo_root).unwrap();
             match monorepo.list_issues() {

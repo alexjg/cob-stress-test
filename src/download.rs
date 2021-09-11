@@ -105,6 +105,7 @@ fn issues<'a>(
                 let first_page = crab
                     .issues(reponame.owner.as_str(), reponame.name.as_str())
                     .list()
+                    .state(octocrab::params::State::All)
                     .per_page(100)
                     .send()
                     .await?;
@@ -117,7 +118,9 @@ fn issues<'a>(
             PaginationState::InProgress(crab, current_page) => {
                 let items = futures::stream::FuturesUnordered::new();
                 for issue in current_page.items {
-                    items.push(get_issue(crab.clone(), reponame, issue))
+                    if !issue.pull_request.is_some() {
+                        items.push(get_issue(crab.clone(), reponame, issue))
+                    }
                 }
                 let items = items.boxed();
                 let next_state = crab
