@@ -4,10 +4,12 @@
 use std::path::PathBuf;
 
 use clap::Clap;
+use cob::ObjectId;
 use indicatif::{ProgressBar, ProgressStyle};
 
 mod download;
 mod downloaded_issue;
+mod graphql;
 mod repo_name;
 use repo_name::RepoName;
 mod lite_monorepo;
@@ -17,8 +19,8 @@ mod peer_identities;
 mod peer_refs_storage;
 mod peers;
 
-#[derive(Clone, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-struct GithubUserId(u64);
+#[derive(Debug, Clone, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+struct GithubUserId(String);
 
 #[derive(Clap)]
 struct Args {
@@ -36,15 +38,24 @@ enum Command {
         token_file: String,
         repo: RepoName,
     },
-    CreateMonorepo {
-        repo: RepoName,
-    },
     ImportIssues {
         repo: RepoName,
     },
     ListImportedIssues {
         repo: RepoName,
     },
+    RetrieveIssue {
+        repo: RepoName,
+        object_id: ObjectId,
+        #[clap(long)]
+        no_cache: bool,
+    },
+    IssueChangeGraphInfo {
+        repo: RepoName,
+        object_id: ObjectId,
+        #[clap(long)]
+        just_graphviz: bool,
+    }
 }
 
 #[tokio::main]
@@ -62,7 +73,7 @@ async fn main() {
             if !std::fs::try_exists(&repo_storage_dir).unwrap() {
                 std::fs::create_dir_all(&repo_storage_dir).unwrap();
             }
-            let storage = download::Storage::new(repo_storage_dir);
+            let storage = download::Storage::new(repo_storage_dir).unwrap();
             let crab = octocrab::OctocrabBuilder::default()
                 .personal_token(token.trim().to_string())
                 .build()
@@ -80,7 +91,7 @@ async fn main() {
             let monorepo_root = storage_root.join("monorepo");
             let mut monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
             let issue_storage_dir = storage_root.join("download");
-            let storage = download::Storage::new(issue_storage_dir);
+            let storage = download::Storage::new(issue_storage_dir).unwrap();
             let issues = storage.issues().unwrap();
             let bar = ProgressBar::new(issues.len() as u64);
             bar.set_style(
@@ -92,20 +103,12 @@ async fn main() {
                 match monorepo.import_issue(issue) {
                     Ok(()) => {}
                     Err(e) => {
-                        eprintln!("Failed to import issue: {}", e);
+                        eprintln!("Failed to import issue: {:?}", e);
                         return;
                     }
                 }
             }
             bar.finish();
-        }
-        Command::CreateMonorepo { repo } => {
-            let storage_root = args
-                .data_dir
-                .join(repo.owner.as_str())
-                .join(repo.name.as_str());
-            let monorepo_root = storage_root.join("monorepo");
-            let _monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
         }
         Command::ListImportedIssues { repo } => {
             let storage_root = args
@@ -117,6 +120,41 @@ async fn main() {
             match monorepo.list_issues() {
                 Ok(n) => println!("There are {} issues", n),
                 Err(e) => eprintln!("Error retrieving issues {}", e),
+            }
+        }
+        Command::IssueChangeGraphInfo { repo, object_id, just_graphviz } => {
+            let storage_root = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str());
+            let monorepo_root = storage_root.join("monorepo");
+            let monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
+            match monorepo.issue_info(&object_id) {
+                Ok(Some(i)) => {
+                    if just_graphviz {
+                        println!("{}", i.dotviz);
+                    } else {
+                        println!("Tips of change graph are: {:?}", i.tips);
+                        println!("Change graph has {} nodes", i.number_of_nodes);
+                    }
+                }
+                Ok(None) => println!("no such issue"),
+                Err(e) => eprintln!("Error retrieving issue {:?}", e),
+            }
+        }
+        Command::RetrieveIssue { repo, object_id, no_cache } => {
+            let storage_root = args
+                .data_dir
+                .join(repo.owner.as_str())
+                .join(repo.name.as_str());
+            let monorepo_root = storage_root.join("monorepo");
+            let monorepo = LiteMonorepo::create_or_open(monorepo_root).unwrap();
+            match monorepo.retrieve_issue(&object_id, !no_cache) {
+                Ok(Some(json)) => {
+                    println!("{}", json);
+                }
+                Ok(None) => println!("null"),
+                Err(e) => eprintln!("Error retrieving issue {}", e),
             }
         }
     };

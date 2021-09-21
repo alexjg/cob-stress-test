@@ -1,0 +1,20 @@
+query getIssues($owner: String!, $name: String!, $number: Int!, $after: String!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number){
+      comments(after: $after, first: 100) {
+          nodes {
+              author { login  }
+              id
+              body
+              createdAt
+              updatedAt
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+            startCursor
+          }
+        }
+    }
+  }
+}

@@ -4,6 +4,7 @@
         "author_urn": {"type": "string"},
         "title": {"type": "string"},
         "body": {"type": "string"},
+        "github_issue_number": {"type": "string"},
         "created_at": {"type": "string", "format": "date-time"},
         "comments": {
             "type": "array",

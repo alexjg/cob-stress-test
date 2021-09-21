@@ -1,11 +1,11 @@
 use super::downloaded_issue::DownloadedIssue;
 use super::RepoName;
 
-use futures::stream::{StreamExt, TryStreamExt};
-use std::convert::TryInto;
-use std::pin::Pin;
+use futures::stream::StreamExt;
 use thiserror::Error;
 use tokio::task::JoinError;
+use super::graphql;
+use std::sync::Arc;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -15,6 +15,8 @@ pub enum Error {
     Octocrab(#[from] octocrab::Error),
     #[error(transparent)]
     Join(#[from] JoinError),
+    #[error(transparent)]
+    Graphql(#[from] graphql::Error),
 }
 
 #[derive(Debug, Error)]
@@ -30,8 +32,12 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub fn new(storage_dir: std::path::PathBuf) -> Storage {
-        Storage { dir: storage_dir }
+    pub fn new(storage_dir: std::path::PathBuf) -> Result<Storage, std::io::Error> {
+        let issues_dir = &storage_dir.join("issues");
+        if !std::fs::try_exists(&issues_dir)? {
+            std::fs::create_dir_all(&issues_dir)?;
+        }
+        Ok(Storage { dir: storage_dir })
     }
 
     /// List downloaded issues in this storage
@@ -40,7 +46,7 @@ impl Storage {
             Ok(Vec::new())
         } else {
             let mut issues = Vec::new();
-            for file in std::fs::read_dir(&self.dir)? {
+            for file in std::fs::read_dir(&self.dir.join("issues"))? {
                 let bytes = std::fs::read(file?.path())?;
                 let issue: DownloadedIssue = serde_json::from_slice(&bytes[..])?;
                 issues.push(issue)
@@ -49,15 +55,29 @@ impl Storage {
         }
     }
 
-    fn stored_issues(&self) -> Vec<u64> {
-        Vec::new()
-    }
 
     fn store(&self, issue: &DownloadedIssue) -> Result<(), std::io::Error> {
-        let issue_filename = format!("{}.json", issue.id);
-        let issue_path = self.dir.join(issue_filename);
+        let issue_filename = format!("{}.json", issue.number);
+        let issue_path = self.dir.join("issues").join(issue_filename);
         let output = serde_json::to_vec(issue)?;
         std::fs::write(issue_path, &output)
+    }
+}
+
+impl graphql::CursorCache for Arc<Storage> {
+    fn save_cursor(&self, cursor: String) -> Result<(), std::io::Error> {
+        let cursor_path = self.dir.join("last_cursor");
+        std::fs::write(cursor_path, &cursor)?;
+        Ok(())
+    }
+
+    fn load_cursor(&self) -> Result<Option<String>, std::io::Error> {
+        let cursor_path = self.dir.join("last_cursor");
+        if std::fs::try_exists(&cursor_path)? {
+            Ok(Some(std::fs::read_to_string(cursor_path)?.trim().to_string()))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -66,150 +86,11 @@ pub(crate) async fn download(
     repo: RepoName,
     storage: Storage,
 ) -> Result<(), Error> {
-    let mut stream = issues(&crab, &repo, storage.stored_issues());
+    let storage = Arc::new(storage);
+    let mut stream = graphql::issues(crab, repo, Box::new(storage.clone()));
     while let Some(issue) = stream.next().await {
         storage.store(&issue?)?;
     }
     Ok(())
 }
 
-enum PaginationState<T> {
-    Starting(octocrab::Octocrab),
-    InProgress(octocrab::Octocrab, Box<octocrab::Page<T>>),
-    Done,
-}
-
-type IssueStreamResult<'a> = Result<
-    Pin<Box<dyn futures::Stream<Item = Result<DownloadedIssue, Error>> + std::marker::Send + 'a>>,
-    Error,
->;
-
-fn issues<'a>(
-    crab: &'a octocrab::Octocrab,
-    reponame: &'a RepoName,
-    _stored_issues: Vec<u64>,
-) -> impl futures::stream::Stream<Item = Result<DownloadedIssue, Error>> + 'a {
-    let stream: Pin<Box<dyn futures::Stream<Item = IssueStreamResult> + std::marker::Send>> =
-        futures::stream::try_unfold::<PaginationState<octocrab::models::issues::Issue>, _, _, _>(
-            PaginationState::Starting(crab.clone()),
-            async move |state| match state {
-                PaginationState::Starting(crab) => {
-                    let first_page = crab
-                        .issues(reponame.owner.as_str(), reponame.name.as_str())
-                        .list()
-                        .state(octocrab::params::State::All)
-                        .per_page(100)
-                        .send()
-                        .await?;
-                    Ok(Some((
-                        futures::stream::empty().boxed(),
-                        PaginationState::InProgress(crab, Box::new(first_page)),
-                    )))
-                }
-                PaginationState::Done => Ok(None),
-                PaginationState::InProgress(crab, current_page) => {
-                    let items = futures::stream::FuturesUnordered::new();
-                    for issue in current_page.items {
-                        if issue.pull_request.is_none() {
-                            items.push(get_issue(crab.clone(), reponame, issue))
-                        }
-                    }
-                    let items = items.boxed();
-                    let next_state = crab
-                        .get_page(&current_page.next)
-                        .await?
-                        .map(|p| PaginationState::InProgress(crab, Box::new(p)))
-                        .unwrap_or(PaginationState::Done);
-                    Ok(Some((items.map_err(Error::from).boxed(), next_state)))
-                }
-            },
-        )
-        .boxed();
-    stream.try_flatten().boxed()
-}
-
-async fn get_issue(
-    crab: octocrab::Octocrab,
-    reponame: &RepoName,
-    issue: octocrab::models::issues::Issue,
-) -> Result<DownloadedIssue, Error> {
-    let mut comments = Vec::new();
-    let mut comments_stream = get_comments(
-        &crab,
-        reponame.owner.as_str(),
-        reponame.name.as_str(),
-        issue.number.try_into().unwrap(),
-    );
-    while let Some(try_comments_page) = comments_stream.next().await {
-        let comments_page = try_comments_page?;
-        comments.extend_from_slice(&comments_page[..]);
-    }
-    Ok(DownloadedIssue::new(issue, comments))
-}
-
-fn get_comments<'a>(
-    crab: &'a octocrab::Octocrab,
-    owner: &'a str,
-    repo: &'a str,
-    issue: u64,
-) -> impl futures::stream::Stream<
-    Item = Result<Vec<octocrab::models::issues::Comment>, octocrab::Error>,
-> + 'a {
-    futures::stream::try_unfold::<PaginationState<octocrab::models::issues::Comment>, _, _, _>(
-        PaginationState::Starting(crab.clone()),
-        async move |state| match state {
-            PaginationState::Done => Ok(None),
-            PaginationState::Starting(crab) => {
-                let first_page = crab
-                    .issues(owner, repo)
-                    .list_comments(issue)
-                    .per_page(100)
-                    .send()
-                    .await?;
-                Ok(Some((
-                    Vec::new(),
-                    PaginationState::InProgress(crab, Box::new(first_page)),
-                )))
-            }
-            PaginationState::InProgress(crab, current_page) => {
-                let next_state = crab
-                    .get_page(&current_page.next)
-                    .await?
-                    .map(|p| PaginationState::InProgress(crab, Box::new(p)))
-                    .unwrap_or(PaginationState::Done);
-                Ok(Some((current_page.items, next_state)))
-            }
-        },
-    )
-    .boxed()
-}
-
-// We could do this with graphql instead, which looks like this:
-//
-// query getIssues($owner: String!, $name: String!) {
-//   repository(owner: $owner, name: $name) {
-//   	issues(first: 100) {
-//       nodes {
-//         author { login }
-//         body
-//         createdAt
-//         updatedAt
-//         comments(first: 100) {
-//           nodes {
-//             author { login }
-//             body
-//             createdAt
-//           }
-//         }
-//       }
-//     }
-//   }
-//   rateLimit {
-//   	cost
-//     limit
-//     remaining
-//   }
-// }
-//
-// We would have to find a way of recognising when we didn't manage to get all of the comments and
-// then fetch more. But this would in general be easier because we

@@ -37,7 +37,7 @@ impl PeerAssignments {
         })
     }
 
-    pub(crate) fn assign(&mut self, uid: GithubUserId) -> Result<&PeerId, Error> {
+    pub(crate) fn assign(&mut self, uid: &GithubUserId) -> Result<&PeerId, Error> {
         if self.assignments.contains_key(&uid) {
             return Ok(self.assignments.get(&uid).unwrap());
         }

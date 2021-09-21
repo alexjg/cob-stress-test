@@ -1,8 +1,9 @@
-use cob::{ObjectId, RefsStorage, TypeName};
+use cob::{ObjectId, ObjectRefs, RefsStorage, TypeName};
 use link_identities::git::Urn;
+use link_crypto::PeerId;
 use thiserror::Error;
 
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -45,43 +46,59 @@ impl<'a> RefsStorage for PeerRefsStorage<'a> {
         Ok(())
     }
 
-    fn type_references(
-        &self,
+    fn type_references<'b>(
+        &'b self,
         identity_urn: &Urn,
         typename: &TypeName,
-    ) -> Result<Vec<(ObjectId, git2::Reference<'_>)>, Self::Error> {
-        let mut object_ref_regex = typename.to_string();
-        let oid_regex_str = r"/([0-9a-f]{40})";
-        object_ref_regex.push_str(oid_regex_str);
-        let oid_regex = regex::Regex::new(object_ref_regex.as_str()).unwrap();
-        let refs = self.repo.references()?;
-        let project_urn_str = identity_urn.encode_id();
-        Ok(refs
-            .into_iter()
-            .flatten()
-            .filter_map(|reference| {
-                if let Some(name) = reference.name() {
-                    if name.contains(&project_urn_str) {
-                        if let Some(cap) = oid_regex.captures(name) {
-                            // This unwrap is fine because the regex we used ensures the string is a
-                            // valid OID
-                            let oid = ObjectId::from_str(&cap[1]).unwrap();
-                            return Some((oid, reference));
-                        }
+    ) -> Result<HashMap<ObjectId, ObjectRefs<'b>>, Self::Error> {
+        let peer_regex_str = format!(
+            r"refs/namespaces/{}/refs/remotes/([0-9a-zA-Z]+)/cob/{}/([0-9a-f]{{40}})",
+            identity_urn.encode_id(),
+            typename.to_string(),
+        );
+        let peer_regex = regex::Regex::new(peer_regex_str.as_str()).unwrap();
+        let mut result = HashMap::new();
+
+        for reference in self.repo.references().into_iter().flatten() {
+            let reference = reference?;
+            if let Some(name) = reference.name() {
+                if let Some(caps) = peer_regex.captures(name) {
+                    let oid = ObjectId::from_str(&caps[2]).unwrap();
+                    let mut refs = result.entry(oid).or_insert_with(|| ObjectRefs{
+                        local: None,
+                        remote: Vec::new(),
+                    });
+                    let peer = PeerId::from_str(&caps[1]).unwrap();
+                    if peer == self.peer {
+                        refs.local = Some(reference);
+                    } else {
+                        refs.remote.push(reference);
                     }
                 }
-                None
-            })
-            .collect())
+            }
+        }
+        Ok(result)
     }
 
-    fn object_references(
-        &self,
+    fn object_references<'b>(
+        &'b self,
         identity_urn: &Urn,
         typename: &TypeName,
         oid: &ObjectId,
-    ) -> Result<Vec<git2::Reference<'_>>, Self::Error> {
-        let glob = globset::Glob::new(
+    ) -> Result<ObjectRefs<'b>, Self::Error> {
+        let local_str = format!(
+            "refs/namespaces/{}/refs/remotes/{}/cob/{}/{}",
+            identity_urn.encode_id(),
+            self.peer.default_encoding(),
+            typename.to_string(),
+            oid.to_string()
+        );
+        let local = match self.repo.find_reference(local_str.as_str()) {
+            Ok(r) => Some(r),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => None,
+            Err(e) => return Err(e.into()),
+        };
+        let remote_glob = globset::Glob::new(
             format!(
                 "refs/namespaces/{}/refs/remotes/**/cob/{}/{}",
                 identity_urn.encode_id(),
@@ -92,7 +109,9 @@ impl<'a> RefsStorage for PeerRefsStorage<'a> {
         )
         .unwrap()
         .compile_matcher();
-        references_glob(self.repo, glob)?.collect()
+        let remote = references_glob(self.repo, local_str, remote_glob)?
+            .collect::<Result<Vec<git2::Reference<'_>>, Self::Error>>()?;
+        Ok(ObjectRefs { local, remote })
     }
 }
 
@@ -118,10 +137,12 @@ impl<'a> std::fmt::Display for LiteRef<'a> {
 
 fn references_glob(
     repo: &git2::Repository,
+    skip_ref: String,
     glob: globset::GlobMatcher,
 ) -> Result<ReferencesGlob<'_>, Error> {
     Ok(ReferencesGlob {
         iter: repo.references()?,
+        skip: skip_ref,
         glob,
     })
 }
@@ -129,6 +150,7 @@ fn references_glob(
 // Copied from librad
 pub struct ReferencesGlob<'a> {
     iter: git2::References<'a>,
+    skip: String,
     glob: globset::GlobMatcher,
 }
 
@@ -139,6 +161,7 @@ impl<'a> Iterator for ReferencesGlob<'a> {
         for reference in &mut self.iter {
             match reference {
                 Ok(reference) => match reference.name() {
+                    Some(name) if name == self.skip.as_str() => continue,
                     Some(name) if self.glob.is_match(name) => return Some(Ok(reference)),
                     _ => continue,
                 },

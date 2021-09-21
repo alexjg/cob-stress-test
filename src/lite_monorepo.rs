@@ -2,8 +2,8 @@ use automerge::LocalChange;
 use either::Either;
 use lazy_static::lazy_static;
 use link_identities::delegation::Indirect;
-use std::path::PathBuf;
 use std::str::FromStr;
+use std::{collections::HashMap, path::PathBuf};
 
 use link_identities::{
     git::Urn,
@@ -80,6 +80,12 @@ mod error {
         #[error(transparent)]
         CobRetrieve(#[from] cob::error::Retrieve<PeerRefsError>),
     }
+
+    #[derive(Debug, Error)]
+    pub(crate) enum Retrieve {
+        #[error(transparent)]
+        CobRetrieve(#[from] cob::error::Retrieve<PeerRefsError>),
+    }
 }
 
 /// A `LiteMonorepo` is a rough approximation to the full monorepo used by librad. The aim is to be
@@ -101,6 +107,7 @@ mod error {
 /// essentially the same as the librad implementation.
 ///
 /// The lite monorepo ends up looking like this on disk:
+///
 /// ```
 /// ├── git <- the underlying storage
 /// ├── peer_identities <- a JSON file mapping peer IDs to the OID of their identity tree
@@ -164,6 +171,11 @@ impl LiteMonorepo {
             project
         };
 
+        let cob_cache_path = root.as_ref().join("cob_cache");
+        if !std::fs::try_exists(&cob_cache_path)? {
+            std::fs::create_dir_all(&cob_cache_path)?;
+        }
+
         Ok(LiteMonorepo {
             root: root.as_ref().to_path_buf(),
             peers,
@@ -175,41 +187,52 @@ impl LiteMonorepo {
     }
 
     pub(crate) fn import_issue(&mut self, issue: &DownloadedIssue) -> Result<(), error::Import> {
-        let creator_id = self.peer_assignments.assign(issue.author_id())?;
-        let (creator_person, creator_key) = self.peer_identities.get(creator_id).unwrap();
-        let init_change = init_issue_change(issue, &creator_person.urn());
-        let storage = PeerRefsStorage::new(*creator_id, &self.repo);
-        let mut object = cob::create_object(
-            &storage,
-            &self.repo,
-            &(creator_key.clone()).into(),
-            creator_person.content_id.into(),
-            Either::Right(self.project.clone()),
-            cob::NewObjectSpec {
-                history: init_change,
-                message: None,
-                typename: TYPENAME.to_string(),
-                schema_json: SCHEMA.clone(),
-            },
-        )?;
-
-        for comment in &issue.comments {
-            let commentor_id = self.peer_assignments.assign(comment.author_id())?;
-            let (commentor_person, commentor_key) = self.peer_identities.get(commentor_id).unwrap();
-            let storage = PeerRefsStorage::new(*commentor_id, &self.repo);
-            object = cob::update_object(
+        if let Some(ref author) = issue.author_id {
+            let creator_id = self.peer_assignments.assign(author)?;
+            let (creator_person, creator_key) = self.peer_identities.get(creator_id).unwrap();
+            let init_change = init_issue_change(issue, &creator_person.urn());
+            let storage = PeerRefsStorage::new(*creator_id, &self.repo);
+            let mut object = cob::create_object(
                 &storage,
-                &(commentor_key.clone()).into(),
                 &self.repo,
-                commentor_person.content_id.into(),
+                &(creator_key.clone()).into(),
+                &creator_person,
                 Either::Right(self.project.clone()),
-                cob::UpdateObjectSpec {
-                    object_id: *object.id(),
-                    typename: TYPENAME.clone(),
+                cob::NewObjectSpec {
+                    history: init_change,
                     message: None,
-                    changes: add_comment_change(comment, &commentor_person.urn(), object.history()),
+                    typename: TYPENAME.clone(),
+                    schema_json: SCHEMA.clone(),
                 },
+                Some(self.cache_path()),
             )?;
+
+            for comment in &issue.comments {
+                if let Some(commentor) = &comment.author_id {
+                    let commentor_id = self.peer_assignments.assign(&commentor)?;
+                    let (commentor_person, commentor_key) =
+                        self.peer_identities.get(commentor_id).unwrap();
+                    let storage = PeerRefsStorage::new(*commentor_id, &self.repo);
+                    object = cob::update_object(
+                        &storage,
+                        &(commentor_key.clone()).into(),
+                        &self.repo,
+                        &commentor_person,
+                        Either::Right(self.project.clone()),
+                        cob::UpdateObjectSpec {
+                            object_id: *object.id(),
+                            typename: TYPENAME.clone(),
+                            message: None,
+                            changes: add_comment_change(
+                                comment,
+                                &commentor_person.urn(),
+                                object.history(),
+                            ),
+                        },
+                        Some(self.cache_path()),
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -222,8 +245,58 @@ impl LiteMonorepo {
             &self.repo,
             Either::Right(self.project.clone()),
             &TYPENAME,
+            Some(self.cache_path()),
         )?;
         Ok(objs.len())
+    }
+
+    pub(crate) fn retrieve_issue(
+        &self,
+        object_id: &cob::ObjectId,
+        use_cache: bool,
+    ) -> Result<Option<serde_json::Value>, error::Retrieve> {
+        let some_peer = self.peers.some_peer();
+        let storage = PeerRefsStorage::new(*some_peer, &self.repo);
+        let cache_path = if use_cache {
+            Some(self.cache_path())
+        } else {
+            None
+        };
+        if let Some(obj) = cob::retrieve_object(
+            &storage,
+            &self.repo,
+            Either::Right(self.project.clone()),
+            &TYPENAME,
+            object_id,
+            cache_path,
+        )? {
+            let backend = automerge::Backend::load(obj.history().as_ref().to_vec()).unwrap();
+            let mut frontend = automerge::Frontend::new();
+            frontend.apply_patch(backend.get_patch().unwrap()).unwrap();
+            Ok(Some(frontend.state().to_json()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(crate) fn issue_info(
+        &self,
+        object_id: &cob::ObjectId,
+    ) -> Result<Option<cob::ChangeGraphInfo>, error::Retrieve> {
+        let some_peer = self.peers.some_peer();
+        let storage = PeerRefsStorage::new(*some_peer, &self.repo);
+        cob::changegraph_info_for_object(
+            &storage,
+            &self.repo,
+            Either::Right(self.project.clone()),
+            &TYPENAME,
+            object_id,
+        )
+        .map_err(error::Retrieve::from)
+    }
+
+    fn cache_path(&self) -> std::path::PathBuf {
+        self.root.join("cob_cache")
     }
 }
 
@@ -264,6 +337,12 @@ fn init_issue_change(issue: &DownloadedIssue, author_urn: &Urn) -> cob::History 
                 automerge::Path::root().key("comments"),
                 automerge::Value::List(Vec::new()),
             ))?;
+            d.add_change(LocalChange::set(
+                automerge::Path::root().key("github_issue_number"),
+                automerge::Value::Primitive(automerge::Primitive::Str(
+                    issue.number.to_string().into(),
+                )),
+            ))?;
             Ok(())
         })
         .unwrap();
@@ -285,22 +364,34 @@ fn add_comment_change(
 
     let (_, change) = frontend
         .change::<_, _, automerge::InvalidChangeRequest>(None, |d| {
+            let comments_len = match d.value_at_path(&automerge::Path::root().key("comments")) {
+                Some(automerge::Value::List(elems)) => elems.len(),
+                _ => panic!("comments must be a list due to the schema"),
+            };
+            let comment_path = automerge::Path::root()
+                .key("comments")
+                .index(comments_len as u32);
+            let comment_map = automerge::Value::Map(HashMap::new());
+            d.add_change(LocalChange::insert(comment_path.clone(), comment_map))?;
+
             d.add_change(LocalChange::set(
-                automerge::Path::root().key("commenter_urn"),
+                comment_path.clone().key( "commenter_urn"),
                 automerge::Value::Primitive(automerge::Primitive::Str(
                     commentor_urn.to_string().into(),
                 )),
             ))?;
+
             d.add_change(LocalChange::set(
-                automerge::Path::root().key("comment"),
-                to_text(comment.body.as_str()),
+                comment_path.clone().key( "comment"), to_text(comment.body.as_str())
             ))?;
+
             d.add_change(LocalChange::set(
-                automerge::Path::root().key("created_at"),
+                comment_path.key("created_at"),
                 automerge::Value::Primitive(automerge::Primitive::Str(
                     comment.created_at.to_rfc3339().into(),
                 )),
             ))?;
+
             Ok(())
         })
         .unwrap();

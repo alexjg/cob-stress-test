@@ -5,6 +5,7 @@ use thiserror::Error;
 #[error("Repository name must be <organisation/owner>")]
 pub struct ParseError {}
 
+#[derive(Clone)]
 pub(crate) struct RepoName {
     pub(crate) owner: String,
     pub(crate) name: String,
