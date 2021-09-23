@@ -14,7 +14,6 @@ pub(crate) struct DownloadedIssue {
     pub created_at: DateTime<Utc>,
 }
 
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub(crate) struct DownloadedComment {
     pub id: String,
@@ -23,4 +22,3 @@ pub(crate) struct DownloadedComment {
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }
-

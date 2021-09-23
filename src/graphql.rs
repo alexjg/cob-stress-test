@@ -9,8 +9,8 @@ use crate::{
     GithubUserId, RepoName,
 };
 
-static ISSUES_QUERY: &'static str = include_str!("./get_issues.graphql");
-static ISSUE_COMMENTS_QUERY: &'static str = include_str!("./get_issue_comments.graphql");
+static ISSUES_QUERY: &str = include_str!("./get_issues.graphql");
+static ISSUE_COMMENTS_QUERY: &str = include_str!("./get_issue_comments.graphql");
 
 #[derive(Clone, Debug, Deserialize)]
 struct GithubUserLoginWrapper {
@@ -138,7 +138,7 @@ pub(crate) fn issues(
     let stream: Pin<Box<dyn futures::Stream<Item = IssueStreamResult> + std::marker::Send>> =
         futures::stream::try_unfold::<PaginationState, _, _, _>(
             PaginationState::Starting(IssuesStreamState {
-                crab: crab.clone(),
+                crab,
                 repo,
                 cursor_cache,
             }),
@@ -236,7 +236,7 @@ async fn comments(
             "after": page.end_cursor
         });
         let next_page: DataWrapper<GraphqlCommentsRepositoryWrapper> =
-            match graphql_request(&crab, &ISSUE_COMMENTS_QUERY, vars).await {
+            match graphql_request(&crab, ISSUE_COMMENTS_QUERY, vars).await {
                 Ok(p) => p,
                 Err(e) => {
                     println!("Error whilst fetching comments for {}", issue.number);

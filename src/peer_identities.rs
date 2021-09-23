@@ -50,7 +50,7 @@ impl PeerIdentities {
                     name: peer.to_string().into(),
                 });
                 let pubkey: PublicKey = key.public();
-                let delegations: Direct = Some(pubkey).into_iter().collect();
+                let delegations: Direct = Direct::new(pubkey);
                 let identity = identities.create(payload, delegations, key)?;
                 ids.insert(*peer, (identity, key.clone()));
             }

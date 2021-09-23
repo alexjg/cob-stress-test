@@ -1,6 +1,6 @@
 use cob::{ObjectId, ObjectRefs, RefsStorage, TypeName};
-use link_identities::git::Urn;
 use link_crypto::PeerId;
+use link_identities::git::Urn;
 use thiserror::Error;
 
 use std::{collections::HashMap, str::FromStr};
@@ -64,7 +64,7 @@ impl<'a> RefsStorage for PeerRefsStorage<'a> {
             if let Some(name) = reference.name() {
                 if let Some(caps) = peer_regex.captures(name) {
                     let oid = ObjectId::from_str(&caps[2]).unwrap();
-                    let mut refs = result.entry(oid).or_insert_with(|| ObjectRefs{
+                    let mut refs = result.entry(oid).or_insert_with(|| ObjectRefs {
                         local: None,
                         remote: Vec::new(),
                     });

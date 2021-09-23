@@ -196,7 +196,7 @@ impl LiteMonorepo {
                 &storage,
                 &self.repo,
                 &(creator_key.clone()).into(),
-                &creator_person,
+                creator_person,
                 Either::Right(self.project.clone()),
                 cob::NewObjectSpec {
                     history: init_change,
@@ -209,7 +209,7 @@ impl LiteMonorepo {
 
             for comment in &issue.comments {
                 if let Some(commentor) = &comment.author_id {
-                    let commentor_id = self.peer_assignments.assign(&commentor)?;
+                    let commentor_id = self.peer_assignments.assign(commentor)?;
                     let (commentor_person, commentor_key) =
                         self.peer_identities.get(commentor_id).unwrap();
                     let storage = PeerRefsStorage::new(*commentor_id, &self.repo);
@@ -217,7 +217,7 @@ impl LiteMonorepo {
                         &storage,
                         &(commentor_key.clone()).into(),
                         &self.repo,
-                        &commentor_person,
+                        commentor_person,
                         Either::Right(self.project.clone()),
                         cob::UpdateObjectSpec {
                             object_id: *object.id(),
@@ -375,14 +375,15 @@ fn add_comment_change(
             d.add_change(LocalChange::insert(comment_path.clone(), comment_map))?;
 
             d.add_change(LocalChange::set(
-                comment_path.clone().key( "commenter_urn"),
+                comment_path.clone().key("commenter_urn"),
                 automerge::Value::Primitive(automerge::Primitive::Str(
                     commentor_urn.to_string().into(),
                 )),
             ))?;
 
             d.add_change(LocalChange::set(
-                comment_path.clone().key( "comment"), to_text(comment.body.as_str())
+                comment_path.clone().key("comment"),
+                to_text(comment.body.as_str()),
             ))?;
 
             d.add_change(LocalChange::set(

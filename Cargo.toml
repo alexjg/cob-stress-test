@@ -24,24 +24,20 @@ indicatif = "0.16.2"
 reqwest = "0.11.4"
 
 [dependencies.cob]
-#git = "https://github.com/radicle-dev/radicle-link.git"
-path = "../radicle-link/cob"
-#branch = "alexjg/collab-objects"
+git = "https://github.com/radicle-dev/radicle-link.git"
+branch = "alexjg/collab-objects"
 
 [dependencies.link-identities]
-#git = "https://github.com/radicle-dev/radicle-link.git"
-path = "../radicle-link/link-identities"
-#branch = "alexjg/collab-objects"
+git = "https://github.com/radicle-dev/radicle-link.git"
+branch = "alexjg/collab-objects"
 
 [dependencies.link-crypto]
-#git = "https://github.com/radicle-dev/radicle-link.git"
-path = "../radicle-link/link-crypto"
-#branch = "alexjg/collab-objects"
+git = "https://github.com/radicle-dev/radicle-link.git"
+branch = "alexjg/collab-objects"
 
 [dependencies.radicle-git-ext]
-#git = "https://github.com/radicle-dev/radicle-link.git"
-path = "../radicle-link/git-ext"
-#branch = "alexjg/collab-objects"
+git = "https://github.com/radicle-dev/radicle-link.git"
+branch = "alexjg/collab-objects"
 
 [patch.crates-io.thrussh-encoding]
 git = "https://github.com/FintanH/thrussh.git"

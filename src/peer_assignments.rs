@@ -38,14 +38,14 @@ impl PeerAssignments {
     }
 
     pub(crate) fn assign(&mut self, uid: &GithubUserId) -> Result<&PeerId, Error> {
-        if self.assignments.contains_key(&uid) {
-            return Ok(self.assignments.get(&uid).unwrap());
+        if self.assignments.contains_key(uid) {
+            return Ok(self.assignments.get(uid).unwrap());
         }
         let next_peer = next_assignment(&self.peers, self.assignments.iter_mut());
         self.assignments.insert(uid.clone(), next_peer);
         let bytes = serde_json::to_vec(&self.assignments)?;
         std::fs::write(&self.path, bytes)?;
-        Ok(self.assignments.get(&uid).unwrap())
+        Ok(self.assignments.get(uid).unwrap())
     }
 }
 

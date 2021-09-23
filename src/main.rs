@@ -41,7 +41,7 @@ enum Command {
     ImportIssues {
         repo: RepoName,
     },
-    ListImportedIssues {
+    CountImportedIssues {
         repo: RepoName,
     },
     RetrieveIssue {
@@ -55,7 +55,7 @@ enum Command {
         object_id: ObjectId,
         #[clap(long)]
         just_graphviz: bool,
-    }
+    },
 }
 
 #[tokio::main]
@@ -110,7 +110,7 @@ async fn main() {
             }
             bar.finish();
         }
-        Command::ListImportedIssues { repo } => {
+        Command::CountImportedIssues { repo } => {
             let storage_root = args
                 .data_dir
                 .join(repo.owner.as_str())
@@ -122,7 +122,11 @@ async fn main() {
                 Err(e) => eprintln!("Error retrieving issues {}", e),
             }
         }
-        Command::IssueChangeGraphInfo { repo, object_id, just_graphviz } => {
+        Command::IssueChangeGraphInfo {
+            repo,
+            object_id,
+            just_graphviz,
+        } => {
             let storage_root = args
                 .data_dir
                 .join(repo.owner.as_str())
@@ -142,7 +146,11 @@ async fn main() {
                 Err(e) => eprintln!("Error retrieving issue {:?}", e),
             }
         }
-        Command::RetrieveIssue { repo, object_id, no_cache } => {
+        Command::RetrieveIssue {
+            repo,
+            object_id,
+            no_cache,
+        } => {
             let storage_root = args
                 .data_dir
                 .join(repo.owner.as_str())

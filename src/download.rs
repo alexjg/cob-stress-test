@@ -1,11 +1,11 @@
 use super::downloaded_issue::DownloadedIssue;
 use super::RepoName;
 
+use super::graphql;
 use futures::stream::StreamExt;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinError;
-use super::graphql;
-use std::sync::Arc;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -55,7 +55,6 @@ impl Storage {
         }
     }
 
-
     fn store(&self, issue: &DownloadedIssue) -> Result<(), std::io::Error> {
         let issue_filename = format!("{}.json", issue.number);
         let issue_path = self.dir.join("issues").join(issue_filename);
@@ -74,7 +73,9 @@ impl graphql::CursorCache for Arc<Storage> {
     fn load_cursor(&self) -> Result<Option<String>, std::io::Error> {
         let cursor_path = self.dir.join("last_cursor");
         if std::fs::try_exists(&cursor_path)? {
-            Ok(Some(std::fs::read_to_string(cursor_path)?.trim().to_string()))
+            Ok(Some(
+                std::fs::read_to_string(cursor_path)?.trim().to_string(),
+            ))
         } else {
             Ok(None)
         }
@@ -93,4 +94,3 @@ pub(crate) async fn download(
     }
     Ok(())
 }
-

@@ -1,22 +1,48 @@
 = Collaborative object stress test
 
 This repository is a tool for exploring how Radicle collaborative objects
-perform when there are large numbers of objects. There are two questions I am
-interested in:
+perform when there are large numbers of objects. There were two questions I was
+initially interested in:
 
 * How much space overhead does the encoding of automerge changes into git merkle
   trees introduce?
 * How long does it take to retrieve all the issues of a given type? 
 
-To answer these questions we need a test dataset. In order that this data be
-somewhat realistic we download issues from a selected repository in github and
+To answer these questions I needed a test dataset. In order that this data be
+somewhat realistic I download issues from a selected repository in github and
 then import these issues into a simplified monorepo. 
 
-This is all reified as a command line tool which implements two separate steps,
+This is all reified as a command line tool which implemented two separate steps,
 one to download issues from a Github repo and one to import those issues into a
-monorepo.
+monorepo. You can read more about the specific commands below.
 
-== Download issues
+== First results
+
+I downloaded 10700 issues from the `facebook/react` repository (some of them
+having several hundred comments) and imported them into a local monorepo. The
+import process itself took around 2.5 hours, this isn't enormously interesting
+in this example as it's unlikely any project is going to generate thousands of
+issues in a short amount of time, but it's worth noting that creating objects is
+not cheap - faster moving data may need to wait on performance improvements.
+
+Note that the raw JSON of the issues was `67M`. 
+
+After importing issues into an otherwise empty git repository the repository
+consumed  around `1Gb`. After running `git gc` this shrinks to around `90M`.
+
+However, retrieving all the issues in the repository took around 6 minutes.
+
+== Caching
+
+After implementing caching in the `cob` library the retrieval operation shrinks
+to around 3 seconds (after building the cache the first time around). Timing is
+dominated (>90%) by loading the automerge document. There is ongoing work to
+improve this and Seph Gentles https://josephg.com/blog/crdts-go-brrr/[recent
+work] suggests that it can be made several orders of magnitude faster.
+
+== CLI
+
+=== Download issues
 
 First we need to download issues from Github. 
 
@@ -27,8 +53,9 @@ First we need to download issues from Github.
 └── automerge
     └── automerge-rs
         ├── download
-        │   ├── 618182998.json
-        │   ├── 627192368.json
+        │   ├── issues
+        │   │   ├── 618182998.json
+        │   │   ├── 627192368.json
         ...
 ----
 <1> `--token-file` is the path to a file containing a github
@@ -36,10 +63,10 @@ First we need to download issues from Github.
 
 By default this tool uses a data directory in `$CWD/data`. For each github
 repository there is a directory in the data directory under `owner/name`.
-Downloaded issues are saved in `$data/owner/name/downlod`. Above you can see
+Downloaded issues are saved in `$data/owner/name/download`. Above you can see
 there is one json file per issue.
 
-== Import Issues
+=== Import Issues
 
 [source,shell]
 ----
@@ -87,3 +114,36 @@ This creates a monorepo under `$data/owner/name/monorepo`. This is not the same
 monorepo as the monorepo used by `librad`, but it's similar enough that the
 performance characteristics are the same. For more information see
 `src/lite_monorepo.rs`.
+
+=== Count imported issues
+
+[source,shell]
+----
+collab-stress-test count-imported-issues facebook/react
+----
+
+This tests the time to load the entire data set. You can pass `--no-cache` to
+perform this operation without using the cache.
+
+=== Show a particular issue
+
+If you know the object ID Of an issue (which you can get by looking at the refs
+in the monorepo or the directory names in the cache) you can running
+
+[source,shell]
+----
+collab-stress-test retrieve-issue   facebook/react <object id>
+----
+
+=== Get change graph info
+
+As above, if you know the object ID you can get additional information on the
+change graph of an issue. 
+
+[source,shell]
+----
+collab-stress-test issue-change-graph-info facebook/react <object ID>
+----
+
+The `--just-graphviz` flag for this command can be used to output a graphviz
+representation of the change graph to standard output.
