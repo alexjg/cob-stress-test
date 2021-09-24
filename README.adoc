@@ -35,10 +35,11 @@ However, retrieving all the issues in the repository took around 6 minutes.
 == Caching
 
 After implementing caching in the `cob` library the retrieval operation shrinks
-to around 3 seconds (after building the cache the first time around). Timing is
-dominated (>90%) by loading the automerge document. There is ongoing work to
-improve this and Seph Gentles https://josephg.com/blog/crdts-go-brrr/[recent
-work] suggests that it can be made several orders of magnitude faster.
+to around 3 seconds (after building the cache the first time around). There's no
+obvious single culprit here, it's a lot of different small allocations and IO
+operations. Undoubtedly it could be improved but it's probably not worth
+spending time on just yet as most projects will not be this large for quite some
+time.
 
 == CLI
 
